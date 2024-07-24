@@ -1,7 +1,7 @@
 <!--- Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved. -->
 <!--- SPDX-License-Identifier: Apache-2.0  -->
 
-## Accelerating MoE Training via Whole Graph Computation-Communication Overlapping
+## Lancet: Accelerating MoE Training via Whole Graph Computation-Communication Overlapping
 
 Official implementation for the paper [Lancet: Accelerating Mixture-of-Experts Training via Whole Graph Computation-Communication Overlapping](https://arxiv.org/abs/2404.19429), published in MLSys'24.
 
