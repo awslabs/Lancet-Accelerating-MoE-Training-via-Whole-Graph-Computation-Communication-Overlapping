@@ -9,7 +9,7 @@ ruamel.yaml >= 0.16.12
 awscli >= 1.18.140
 
 # tvm required
-numpy == 1.19.5
+numpy == 1.22.0
 cython == 0.29.35
 decorator
 scipy
