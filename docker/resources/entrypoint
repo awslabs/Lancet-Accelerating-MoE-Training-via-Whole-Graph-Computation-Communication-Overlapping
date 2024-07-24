@@ -1,0 +1,8 @@
+#!/bin/bash
+
+export SSHDPORT=6623
+echo "Starting sshd on port ${SSHDPORT}"
+/usr/sbin/sshd -p ${SSHDPORT}
+
+echo "Running command $@"
+exec "$@"

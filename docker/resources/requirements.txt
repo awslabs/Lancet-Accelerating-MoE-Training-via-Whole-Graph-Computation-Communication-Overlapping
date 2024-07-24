@@ -1,0 +1,25 @@
+setuptools
+future
+tqdm > 4.40
+argparse
+rpyc
+gitpython
+boto3
+ruamel.yaml >= 0.16.12
+awscli >= 1.18.140
+
+# tvm required
+numpy == 1.19.5
+cython == 0.29.35
+decorator
+scipy
+tornado
+typed_ast
+orderedset
+antlr4-python3-runtime == 4.7.2
+attrs
+requests
+packaging
+psutil
+xgboost == 1.5.0
+cloudpickle

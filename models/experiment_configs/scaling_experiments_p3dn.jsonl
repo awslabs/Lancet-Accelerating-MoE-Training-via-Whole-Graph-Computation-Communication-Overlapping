@@ -1,0 +1,14 @@
+{"name": "gpt2_moe_nl12_m768_nh16_sl512_b16", "framework": "lancet", "moe_gate_type": "switch"}
+{"name": "gpt2_moe_nl24_m1024_nh16_sl512_b8", "framework": "lancet", "moe_gate_type": "switch"}
+{"name": "gpt2_moe_nl12_m768_nh16_sl512_b16", "framework": "lancet", "moe_gate_type": "batch_prioritized"}
+{"name": "gpt2_moe_nl24_m1024_nh16_sl512_b8", "framework": "lancet", "moe_gate_type": "batch_prioritized"}
+{"name": "gpt2_moe_nl12_m768_nh16_sl512_b16", "framework": "raf", "moe_gate_type": "switch"}
+{"name": "gpt2_moe_nl24_m1024_nh16_sl512_b8", "framework": "raf", "moe_gate_type": "switch"}
+{"name": "gpt2_moe_nl12_m768_nh16_sl512_b16", "framework": "raf", "moe_gate_type": "batch_prioritized"}
+{"name": "gpt2_moe_nl24_m1024_nh16_sl512_b8", "framework": "raf", "moe_gate_type": "batch_prioritized"}
+{"name": "gpt2_moe_nl12_m768_nh16_sl512_b16", "framework": "deepspeed", "moe_gate_type": "switch"}
+{"name": "gpt2_moe_nl24_m1024_nh16_sl512_b8", "framework": "deepspeed", "moe_gate_type": "switch"}
+{"name": "gpt2_moe_nl12_m768_nh16_sl512_b16", "framework": "tutel", "moe_gate_type": "switch"}
+{"name": "gpt2_moe_nl24_m1024_nh16_sl512_b8", "framework": "tutel", "moe_gate_type": "switch"}
+{"name": "gpt2_moe_nl12_m768_nh16_sl512_b16", "framework": "tutel", "moe_gate_type": "batch_prioritized"}
+{"name": "gpt2_moe_nl24_m1024_nh16_sl512_b8", "framework": "tutel", "moe_gate_type": "batch_prioritized"}
