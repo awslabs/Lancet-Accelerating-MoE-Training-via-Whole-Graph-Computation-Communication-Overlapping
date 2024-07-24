@@ -1,0 +1,2 @@
+{"name": "gpt2_moe_nl12_m768_nh16_sl512_b16", "framework": "lancet", "moe_gate_type": "switch", "no_dw_scheduling": true}
+{"name": "gpt2_moe_nl12_m768_nh16_sl512_b16", "framework": "lancet", "moe_gate_type": "switch", "partition_type": "none"}
