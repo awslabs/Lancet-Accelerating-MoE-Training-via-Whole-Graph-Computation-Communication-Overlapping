@@ -20,7 +20,7 @@ RUN apt-get install software-properties-common -y
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test -y \
     && apt install --only-upgrade libstdc++6 -y
 
-RUN curl -s -L https://github.com/Kitware/CMake/releases/download/v3.19.2/cmake-3.19.2-Linux-x86_64.sh -o cmake.sh \
+RUN curl -s -L https://github.com/Kitware/CMake/releases/download/v3.20.2/cmake-3.20.2-Linux-x86_64.sh -o cmake.sh \
   && sh cmake.sh --skip-license --prefix=/usr/local/
 
 ENV MOFED_VER 5.3-1.0.0.1
