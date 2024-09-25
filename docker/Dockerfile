@@ -115,7 +115,7 @@ RUN cd ~ && wget https://github.com/google/or-tools/releases/download/v9.3/or-to
     && cd or-tools_Ubuntu-20.04-64bit_v9.3.10497
 
 # Clone and build Lancet and models
-RUN git clone https://github.com/awslabs/accelerating-moe-training-via-whole-graph-comp-comm-overlapping --recursive /lancet \
+RUN git clone https://github.com/awslabs/Lancet-Accelerating-MoE-Training-via-Whole-Graph-Computation-Communication-Overlapping.git --recursive /lancet \
     && cp -r /lancet/models /
 
 ENV RAF_HOME=/lancet
