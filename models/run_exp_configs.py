@@ -1,5 +1,6 @@
 import os
 import subprocess
+import shutil
 import psutil
 import time
 import glob
@@ -50,11 +51,18 @@ def parse_specs(dir_name):
 
 def get_instance_type():
     try:
-        token = subprocess.check_output('curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"', shell=True)
-        token = token.decode("utf-8")
-        instance_type = subprocess.check_output(f'curl -s -H "X-aws-ec2-metadata-token: {token}" http://169.254.169.254/latest/meta-data/instance-type', shell=True)
-        instance_type = instance_type.decode("utf-8").split(".")[0]
-    except:
+        res = subprocess.run([
+            "curl", "-s", "-X", "PUT",
+            "http://169.254.169.254/latest/api/token",
+            "-H", "X-aws-ec2-metadata-token-ttl-seconds: 21600",
+        ], check=True, capture_output=True)
+        token = res.stdout.decode("utf-8")
+        res2 = subprocess.run([
+            "curl", "-s", "-H", f"X-aws-ec2-metadata-token: {token}",
+            "http://169.254.169.254/latest/meta-data/instance-type",
+        ], check=True, capture_output=True)
+        instance_type = res2.stdout.decode("utf-8").split(".")[0]
+    except subprocess.CalledProcessError:
         instance_type = "unknown"
     return instance_type
 
@@ -69,9 +77,9 @@ def get_gpu_memory():
     return memory_use_values
 
 def get_num_gpus():
-    COMMAND = "nvidia-smi -L | wc -l"
     try:
-        num_gpus = int(subprocess.check_output(COMMAND,stderr=subprocess.STDOUT, shell=True))
+        out = subprocess.check_output(["nvidia-smi", "-L"], stderr=subprocess.STDOUT)
+        num_gpus = len(out.decode("utf-8").strip().splitlines()) if out else 0
     except subprocess.CalledProcessError as e:
         raise RuntimeError("command '{}' return with error (code {}): {}".format(e.cmd, e.returncode, e.output))
     return num_gpus
@@ -169,11 +177,28 @@ def run_lancet_optimized_benchmarks(args, exp_config: ExpConfig):
         curr_dir_name = os.path.join(curr_dir_name, "nsys_profile")
         os.makedirs(curr_dir_name)
         nsys_outpath = os.path.join(curr_dir_name, f"{descr}.nsys-rep")
-        nsys_cmd = f"nsys profile -w true -t cuda,nvtx,osrt,cudnn,cublas -c cudaProfilerApi --capture-range-end stop-shutdown -o {nsys_outpath}"
-        p = subprocess.Popen(f"{nsys_cmd} ./mpi_wrapper.sh raf --model-name {model_name} --batch {b} {'--fp16' if FP16 else ''} --lancet-optimized-module {opt_mod_path} --nsys-profile --gate-type {exp_config.moe_gate_type}", shell=True)
+        nsys_cmd = [
+            "nsys", "profile", "-w", "true",
+            "-t", "cuda,nvtx,osrt,cudnn,cublas",
+            "-c", "cudaProfilerApi",
+            "--capture-range-end", "stop-shutdown",
+            "-o", nsys_outpath,
+            "--",
+            "./mpi_wrapper.sh", "raf",
+            "--model-name", model_name,
+            "--batch", str(b),
+        ]
+        if FP16:
+            nsys_cmd.append("--fp16")
+        nsys_cmd += ["--lancet-optimized-module", opt_mod_path, "--nsys-profile", "--gate-type", exp_config.moe_gate_type]
+        p = subprocess.Popen(nsys_cmd)
     else:
         os.makedirs(curr_dir_name)
-        p = subprocess.Popen(f"./mpi_wrapper.sh raf --model-name {model_name} --batch {b} {'--fp16' if FP16 else ''} --lancet-optimized-module {opt_mod_path} --gate-type {exp_config.moe_gate_type}", shell=True)
+        cmd = ["./mpi_wrapper.sh", "raf", "--model-name", model_name, "--batch", str(b)]
+        if FP16:
+            cmd.append("--fp16")
+        cmd += ["--lancet-optimized-module", opt_mod_path, "--gate-type", exp_config.moe_gate_type]
+        p = subprocess.Popen(cmd)
     max_mem = 0
     while p.poll() is None:
         time.sleep(2)
@@ -181,7 +206,12 @@ def run_lancet_optimized_benchmarks(args, exp_config: ExpConfig):
         max_mem = max(mem, max_mem)
     time.sleep(10)
     # move all generated files to current_run_dir
-    subprocess.run(f"mv /models/log*.txt {curr_dir_name}", shell=True)
+    # move matching files into the current run dir without using a shell
+    for src in glob.glob('/models/log*.txt'):
+        try:
+            shutil.move(src, curr_dir_name)
+        except Exception:
+            pass
     # write peak memory to file
     with open(os.path.join(curr_dir_name, "peak_memory.txt"), "w") as f:
         f.write(str(max_mem))
@@ -201,7 +231,11 @@ def run_lancet_profile(args, dir_name, gate_type):
     print(f"Profiling {descr}", flush=True)
     model_name = create_full_model_name(model_name, nh, m, nl, sl)
     assert not args.nsys_profile, "Nsight Systems profiling not supported for RAF profiling"
-    p = subprocess.Popen(f"./mpi_wrapper.sh raf --model-name {model_name} --batch {b} {'--fp16' if FP16 else ''} --gate-type {gate_type} --lancet-profile", shell=True)
+    cmd = ["./mpi_wrapper.sh", "raf", "--model-name", model_name, "--batch", str(b)]
+    if FP16:
+        cmd.append("--fp16")
+    cmd += ["--gate-type", gate_type, "--lancet-profile"]
+    p = subprocess.Popen(cmd)
     max_mem = 0
     while p.poll() is None:
         time.sleep(2)
@@ -209,7 +243,13 @@ def run_lancet_profile(args, dir_name, gate_type):
         max_mem = max(mem, max_mem)
     time.sleep(10)
     # move all generated files to current_run_dir
-    subprocess.run(f"mv /models/log*.txt /models/*.mod /models/*.profile /models/timeline_*.json {dir_path}", shell=True)
+    patterns = ['/models/log*.txt', '/models/*.mod', '/models/*.profile', '/models/timeline_*.json']
+    for pat in patterns:
+        for src in glob.glob(pat):
+            try:
+                shutil.move(src, dir_path)
+            except Exception:
+                pass
     # write peak memory to file
     with open(os.path.join(dir_path, "peak_memory.txt"), "w") as f:
         f.write(str(max_mem))
@@ -235,10 +275,27 @@ def run_raf_profile(args, dir_name, gate_type):
     if args.nsys_profile:
         print("Profiling with Nsight Systems", flush=True)
         nsys_outpath = os.path.join(curr_dir_name, f"{descr}.nsys-rep")
-        nsys_cmd = f"nsys profile -w true -t cuda,nvtx,osrt,cudnn,cublas -c cudaProfilerApi --capture-range-end stop-shutdown -o {nsys_outpath}"
-        p = subprocess.Popen(f"{nsys_cmd} ./mpi_wrapper.sh raf --model-name {model_name} --batch {b} {'--fp16' if FP16 else ''} --nsys-profile --gate-type {gate_type}", shell=True)
+        nsys_cmd = [
+            "nsys", "profile", "-w", "true",
+            "-t", "cuda,nvtx,osrt,cudnn,cublas",
+            "-c", "cudaProfilerApi",
+            "--capture-range-end", "stop-shutdown",
+            "-o", nsys_outpath,
+            "--",
+            "./mpi_wrapper.sh", "raf",
+            "--model-name", model_name,
+            "--batch", str(b),
+        ]
+        if FP16:
+            nsys_cmd.append("--fp16")
+        nsys_cmd += ["--nsys-profile", "--gate-type", gate_type]
+        p = subprocess.Popen(nsys_cmd)
     else:
-        p = subprocess.Popen(f"./mpi_wrapper.sh raf --model-name {model_name} --batch {b} {'--fp16' if FP16 else ''} --gate-type {gate_type}", shell=True)
+        cmd = ["./mpi_wrapper.sh", "raf", "--model-name", model_name, "--batch", str(b)]
+        if FP16:
+            cmd.append("--fp16")
+        cmd += ["--gate-type", gate_type]
+        p = subprocess.Popen(cmd)
     max_mem = 0
     while p.poll() is None:
         time.sleep(2)
@@ -246,7 +303,11 @@ def run_raf_profile(args, dir_name, gate_type):
         max_mem = max(mem, max_mem)
     time.sleep(10)
     # move all generated files to current_run_dir
-    subprocess.run(f"mv /models/log*.txt {curr_dir_name}", shell=True)
+    for src in glob.glob('/models/log*.txt'):
+        try:
+            shutil.move(src, curr_dir_name)
+        except Exception:
+            pass
     # write peak memory to file
     with open(os.path.join(curr_dir_name, "peak_memory.txt"), "w") as f:
         f.write(str(max_mem))
@@ -272,10 +333,27 @@ def run_deepspeed_benchmarks(args, dir_name, gate_type):
             return
         os.makedirs(dir_path)
         nsys_outpath = os.path.join(dir_path, f"{descr}.nsys-rep")
-        nsys_cmd = f"nsys profile -w true -t cuda,nvtx,osrt,cudnn,cublas -c cudaProfilerApi --capture-range-end stop-shutdown -o {nsys_outpath}"
-        p = subprocess.Popen(f"{nsys_cmd} ./mpi_wrapper.sh ds --model-name {model_name} --batch {b} {'--fp16' if FP16 else ''} --nsys-profile --gate-type {gate_type}", shell=True)
+        nsys_cmd = [
+            "nsys", "profile", "-w", "true",
+            "-t", "cuda,nvtx,osrt,cudnn,cublas",
+            "-c", "cudaProfilerApi",
+            "--capture-range-end", "stop-shutdown",
+            "-o", nsys_outpath,
+            "--",
+            "./mpi_wrapper.sh", "ds",
+            "--model-name", model_name,
+            "--batch", str(b),
+        ]
+        if FP16:
+            nsys_cmd.append("--fp16")
+        nsys_cmd += ["--nsys-profile", "--gate-type", gate_type]
+        p = subprocess.Popen(nsys_cmd)
     else:
-        p = subprocess.Popen(f"./mpi_wrapper.sh ds --model-name {model_name} --batch {b} {'--fp16' if FP16 else ''} --gate-type {gate_type}", shell=True)
+        cmd = ["./mpi_wrapper.sh", "ds", "--model-name", model_name, "--batch", str(b)]
+        if FP16:
+            cmd.append("--fp16")
+        cmd += ["--gate-type", gate_type]
+        p = subprocess.Popen(cmd)
     max_mem = 0
     while p.poll() is None:
         time.sleep(2)
@@ -283,7 +361,11 @@ def run_deepspeed_benchmarks(args, dir_name, gate_type):
         max_mem = max(mem, max_mem)
     time.sleep(10)
     # move all generated files to current_run_dir
-    subprocess.run(f"mv /models/log*.txt {dir_path}", shell=True)
+    for src in glob.glob('/models/log*.txt'):
+        try:
+            shutil.move(src, dir_path)
+        except Exception:
+            pass
     # write peak memory to file
     with open(os.path.join(dir_path, "peak_memory.txt"), "w") as f:
         f.write(str(max_mem))
@@ -312,10 +394,30 @@ def run_pt_benchmarks(args, dir_name, framework, gate_type):
                 continue
             os.makedirs(per_degree_dir_path)
             nsys_outpath = os.path.join(per_degree_dir_path, f"{descr}.nsys-rep")
-            nsys_cmd = f"nsys profile -w true -t cuda,nvtx,osrt,cudnn,cublas -c cudaProfilerApi --capture-range-end stop-shutdown -o {nsys_outpath}"
-            p = subprocess.Popen(f"{nsys_cmd} ./mpi_wrapper.sh pt --model-name {model_name} --ip {args.ip} --moe-framework {framework} --overlap-degree {ovlp_degree} --batch {b} {'--fp16' if FP16 else ''} --nsys-profile --gate-type {gate_type}", shell=True)
+            nsys_cmd = [
+                "nsys", "profile", "-w", "true",
+                "-t", "cuda,nvtx,osrt,cudnn,cublas",
+                "-c", "cudaProfilerApi",
+                "--capture-range-end", "stop-shutdown",
+                "-o", nsys_outpath,
+                "--",
+                "./mpi_wrapper.sh", "pt",
+                "--model-name", model_name,
+                "--ip", args.ip,
+                "--moe-framework", framework,
+                "--overlap-degree", str(ovlp_degree),
+                "--batch", str(b),
+            ]
+            if FP16:
+                nsys_cmd.append("--fp16")
+            nsys_cmd += ["--nsys-profile", "--gate-type", gate_type]
+            p = subprocess.Popen(nsys_cmd)
         else:
-            p = subprocess.Popen(f"./mpi_wrapper.sh pt --model-name {model_name} --ip {args.ip} --moe-framework {framework} --overlap-degree {ovlp_degree} --batch {b} {'--fp16' if FP16 else ''} --gate-type {gate_type}", shell=True)
+            cmd = ["./mpi_wrapper.sh", "pt", "--model-name", model_name, "--ip", args.ip, "--moe-framework", framework, "--overlap-degree", str(ovlp_degree), "--batch", str(b)]
+            if FP16:
+                cmd.append("--fp16")
+            cmd += ["--gate-type", gate_type]
+            p = subprocess.Popen(cmd)
         max_mem = 0
         while p.poll() is None:
             time.sleep(2)
@@ -323,7 +425,11 @@ def run_pt_benchmarks(args, dir_name, framework, gate_type):
             max_mem = max(mem, max_mem)
         time.sleep(10)
         # move all generated files to current_run_dir
-        subprocess.run(f"mv /models/log*.txt {per_degree_dir_path}", shell=True)
+        for src in glob.glob('/models/log*.txt'):
+            try:
+                shutil.move(src, per_degree_dir_path)
+            except Exception:
+                pass
         # write peak memory to file
         with open(os.path.join(per_degree_dir_path, "peak_memory.txt"), "w") as f:
             f.write(str(max_mem))
@@ -369,7 +475,14 @@ def run_lancet_opt(args, exp_configs: List[ExpConfig]):
                 additional_args += " --fixed-range"
             elif exp_config.partition_type == "none":
                 additional_args += " --no-partition"
-            p = subprocess.Popen(f"python3 run_opt.py --dir {exp_dir} --device {gpu_id} --max-partition {exp_config.max_partition}{additional_args}", shell=True)
+            cmd = ["python3", "run_opt.py", "--dir", exp_dir, "--device", str(gpu_id), "--max-partition", str(exp_config.max_partition)]
+            if exp_config.no_dw_scheduling:
+                cmd += ["--no-dw-schedule"]
+            if exp_config.partition_type == "fixed_range":
+                cmd += ["--fixed-range"]
+            elif exp_config.partition_type == "none":
+                cmd += ["--no-partition"]
+            p = subprocess.Popen(cmd)
             processes.append((p, gpu_id))
             # wait for empty GPU if no GPU available
             all_gpus_in_use = True

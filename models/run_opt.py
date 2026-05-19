@@ -52,11 +52,18 @@ def parse_specs(dir_name):
 
 def get_instance_type():
     try:
-        token = subprocess.check_output('curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"', shell=True)
-        token = token.decode("utf-8")
-        instance_type = subprocess.check_output(f'curl -s -H "X-aws-ec2-metadata-token: {token}" http://169.254.169.254/latest/meta-data/instance-type', shell=True)
-        instance_type = instance_type.decode("utf-8").split(".")[0]
-    except:
+        res = subprocess.run([
+            "curl", "-s", "-X", "PUT",
+            "http://169.254.169.254/latest/api/token",
+            "-H", "X-aws-ec2-metadata-token-ttl-seconds: 21600",
+        ], check=True, capture_output=True)
+        token = res.stdout.decode("utf-8")
+        res2 = subprocess.run([
+            "curl", "-s", "-H", f"X-aws-ec2-metadata-token: {token}",
+            "http://169.254.169.254/latest/meta-data/instance-type",
+        ], check=True, capture_output=True)
+        instance_type = res2.stdout.decode("utf-8").split(".")[0]
+    except subprocess.CalledProcessError:
         instance_type = "unknown"
     return instance_type
 
@@ -100,7 +107,15 @@ def gen_cmd(args):
     if args.fixed_range:
         spec_name += "_fixed_range"
     spec_path = os.path.join(output_dir, spec_name)
-    return CMD_TEMPLATE.format(fixed_range_env, load_profile_path, output_dir, schedule_algo, timeline_opt_algo, disable_partition, world_size, dp_group_size, args.max_partition, world_size, get_instance_type(), args.device, spec_path)
+    # build mpirun command list without invoking a shell
+    cmd = ["mpirun", "--allow-run-as-root", "-np", "1"]
+    if args.fixed_range:
+        cmd += ["-x", "LANCET_PARTITION_RANGE_FIXED=1"]
+    cmd += ["python3", "run_lancet_optimization.py", "--load-profile", load_profile_path, "--output-dir", output_dir, schedule_algo, "--timeline-opt-algo", timeline_opt_algo]
+    if disable_partition:
+        cmd += ["--disable-partition"]
+    cmd += ["--world-size", str(world_size), "--dp-group-size", str(dp_group_size), "--max-partition", str(args.max_partition), "--alltoall-profile-path", f"./alltoall_perf_{world_size}x{get_instance_type()}.csv", "--device", str(args.device)]
+    return cmd, spec_path
 
 if __name__ == "__main__":
     args = parse_args()
@@ -108,5 +123,7 @@ if __name__ == "__main__":
     assert exp_instance_type in ["p4de", "p3dn", "p4d"], f"Unknown instance type {exp_instance_type}"
     args.world_size = nnodes
     args.dp_group_size = 8 * nnodes
-    cmd = gen_cmd(args)
-    subprocess.run(cmd, shell=True)
+    cmd, spec_path = gen_cmd(args)
+    log_path = f"{spec_path}.log"
+    with open(log_path, "w") as lf:
+        subprocess.run(cmd, stdout=lf, stderr=subprocess.STDOUT)

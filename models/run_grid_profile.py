@@ -1,5 +1,6 @@
 import os
 import subprocess
+import shutil
 import psutil
 import time
 import glob
@@ -26,11 +27,18 @@ NHEADS_MAP = {
 
 def get_instance_type():
     try:
-        token = subprocess.check_output('curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"', shell=True)
-        token = token.decode("utf-8")
-        instance_type = subprocess.check_output(f'curl -s -H "X-aws-ec2-metadata-token: {token}" http://169.254.169.254/latest/meta-data/instance-type', shell=True)
-        instance_type = instance_type.decode("utf-8").split(".")[0]
-    except:
+        res = subprocess.run([
+            "curl", "-s", "-X", "PUT",
+            "http://169.254.169.254/latest/api/token",
+            "-H", "X-aws-ec2-metadata-token-ttl-seconds: 21600",
+        ], check=True, capture_output=True)
+        token = res.stdout.decode("utf-8")
+        res2 = subprocess.run([
+            "curl", "-s", "-H", f"X-aws-ec2-metadata-token: {token}",
+            "http://169.254.169.254/latest/meta-data/instance-type",
+        ], check=True, capture_output=True)
+        instance_type = res2.stdout.decode("utf-8").split(".")[0]
+    except subprocess.CalledProcessError:
         instance_type = "unknown"
     return instance_type
 
@@ -104,7 +112,11 @@ def run_grid_profile():
                     print(f"Running {descr}", flush=True)
                     pbar.set_description(descr)
                     model_name = create_model_name(dmodel, nlayers)
-                    p = subprocess.Popen(f"./mpi_wrapper_grid_profile.sh raf --model-name {model_name} --batch {batch_size} {'--fp16' if FP16 else ''} --lancet-profile", shell=True)
+                    cmd = ["./mpi_wrapper_grid_profile.sh", "raf", "--model-name", model_name, "--batch", str(batch_size)]
+                    if FP16:
+                        cmd.append("--fp16")
+                    cmd.append("--lancet-profile")
+                    p = subprocess.Popen(cmd)
                     max_mem = 0
                     start_time = time.time()
                     while p.poll() is None:
@@ -123,7 +135,13 @@ def run_grid_profile():
                         print(f"Success: {descr}", flush=True)
                         success = True
                     # move all generated files to current_run_dir
-                    subprocess.run(f"mv /models/*.mod /models/*.profile /models/timeline_*.json /models/log*.txt {current_run_dir}", shell=True)
+                    patterns = ['/models/*.mod', '/models/*.profile', '/models/timeline_*.json', '/models/log*.txt']
+                    for pat in patterns:
+                        for src in glob.glob(pat):
+                            try:
+                                shutil.move(src, current_run_dir)
+                            except Exception:
+                                pass
                     # write peak memory to file
                     with open(os.path.join(current_run_dir, "peak_memory.txt"), "w") as f:
                         f.write(str(max_mem))
@@ -131,7 +149,10 @@ def run_grid_profile():
                     time.sleep(1)
                     if success:
                         # scp the dir to the optimizing node
-                        subprocess.run(f"scp -r {current_run_dir} 172.31.21.100:{current_run_dir}", shell=True)
+                        try:
+                            subprocess.run(["scp", "-r", current_run_dir, f"172.31.21.100:{current_run_dir}"])
+                        except Exception:
+                            pass
                         # no need to run smaller batch sizes
                         pbar.update(len(BATCH_SIZE) - i)
                         break
