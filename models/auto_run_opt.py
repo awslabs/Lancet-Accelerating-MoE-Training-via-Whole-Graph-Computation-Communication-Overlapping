@@ -1,6 +1,7 @@
 import os
 import multiprocessing
 import subprocess
+import shlex
 import time
 
 WATCH_DIR = "/models/grid_profile"
@@ -21,8 +22,8 @@ def worker_thread(queue: multiprocessing.Queue, rqueue: multiprocessing.Queue, d
         fn = queue.get()
         if fn is None:
             break
-        cmd = CMD.format(fn, device_id)
-        subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        cmd = ["python3", "run_opt.py", "--dir", fn, "--device", str(device_id)]
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         rqueue.put((device_id, fn))
 
 def main():

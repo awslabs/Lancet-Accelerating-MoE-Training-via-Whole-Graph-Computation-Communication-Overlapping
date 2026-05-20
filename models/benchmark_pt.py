@@ -53,11 +53,18 @@ num_experts = 2 * world_size
 
 def get_instance_type():
     try:
-        token = subprocess.check_output('curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"', shell=True)
-        token = token.decode("utf-8")
-        instance_type = subprocess.check_output(f'curl -s -H "X-aws-ec2-metadata-token: {token}" http://169.254.169.254/latest/meta-data/instance-type', shell=True)
-        instance_type = instance_type.decode("utf-8").split(".")[0]
-    except:
+        res = subprocess.run([
+            "curl", "-s", "-X", "PUT",
+            "http://169.254.169.254/latest/api/token",
+            "-H", "X-aws-ec2-metadata-token-ttl-seconds: 21600",
+        ], check=True, capture_output=True)
+        token = res.stdout.decode("utf-8")
+        res2 = subprocess.run([
+            "curl", "-s", "-H", f"X-aws-ec2-metadata-token: {token}",
+            "http://169.254.169.254/latest/meta-data/instance-type",
+        ], check=True, capture_output=True)
+        instance_type = res2.stdout.decode("utf-8").split(".")[0]
+    except subprocess.CalledProcessError:
         instance_type = "unknown"
     return instance_type
 
